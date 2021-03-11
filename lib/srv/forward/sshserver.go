@@ -412,6 +412,13 @@ func (s *Server) GetClock() clockwork.Clock {
 	return s.clock
 }
 
+// GetUtmpPath returns returns the optional override of the utmp and wtmp path.
+// These values are never set for the forwarding server because utmp and wtmp
+// are updated by the target server and not the forwarding server.
+func (s *Server) GetUtmpPath() (string, string) {
+	return "", ""
+}
+
 func (s *Server) Serve() {
 	config := &ssh.ServerConfig{}
 
@@ -669,7 +676,7 @@ func (s *Server) handleDirectTCPIPRequest(ctx context.Context, ch ssh.Channel, r
 	// forwarding is complete.
 	ctx, scx, err := srv.NewServerContext(ctx, s.connectionContext, s, s.identityContext)
 	if err != nil {
-		scx.Errorf("Unable to create connection context: %v.", err)
+		s.log.Errorf("Unable to create connection context: %v.", err)
 		s.stderrWrite(ch, "Unable to create connection context.")
 		return
 	}

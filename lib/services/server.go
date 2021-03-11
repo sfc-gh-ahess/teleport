@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/utils"
 
@@ -36,6 +37,21 @@ const (
 	// Different means that some fields are different
 	Different = iota
 )
+
+// Compare compares two provided resources.
+func Compare(a, b Resource) int {
+	if serverA, ok := a.(Server); ok {
+		if serverB, ok := b.(Server); ok {
+			return CompareServers(serverA, serverB)
+		}
+	}
+	if dbA, ok := a.(types.DatabaseServer); ok {
+		if dbB, ok := b.(types.DatabaseServer); ok {
+			return CompareDatabaseServers(dbA, dbB)
+		}
+	}
+	return Different
+}
 
 // CompareServers returns difference between two server
 // objects, Equal (0) if identical, OnlyTimestampsDifferent(1) if only timestamps differ, Different(2) otherwise
@@ -77,8 +93,8 @@ func CompareServers(a, b Server) int {
 	if a.GetTeleportVersion() != b.GetTeleportVersion() {
 		return Different
 	}
-	// If this server is proxying applications, compare the applications to
-	// make sure they match.
+
+	// If this server is proxying applications, compare them to make sure they match.
 	if a.GetKind() == KindAppServer {
 		return CompareApps(a.GetApps(), b.GetApps())
 	}
@@ -123,6 +139,43 @@ func CompareApps(a []*App, b []*App) int {
 				return Different
 			}
 		}
+	}
+	return Equal
+}
+
+// CompareDatabaseServers returns whether the two provided database servers
+// are equal or different.
+func CompareDatabaseServers(a, b types.DatabaseServer) int {
+	if a.GetKind() != b.GetKind() {
+		return Different
+	}
+	if a.GetName() != b.GetName() {
+		return Different
+	}
+	if a.GetNamespace() != b.GetNamespace() {
+		return Different
+	}
+	if a.GetTeleportVersion() != b.GetTeleportVersion() {
+		return Different
+	}
+	r := a.GetRotation()
+	if !r.Matches(b.GetRotation()) {
+		return Different
+	}
+	if !utils.StringMapsEqual(a.GetStaticLabels(), b.GetStaticLabels()) {
+		return Different
+	}
+	if !CmdLabelMapsEqual(a.GetDynamicLabels(), b.GetDynamicLabels()) {
+		return Different
+	}
+	if !a.Expiry().Equal(b.Expiry()) {
+		return OnlyTimestampsDifferent
+	}
+	if a.GetProtocol() != b.GetProtocol() {
+		return Different
+	}
+	if a.GetURI() != b.GetURI() {
+		return Different
 	}
 	return Equal
 }
@@ -218,4 +271,263 @@ func GuessProxyHostAndVersion(proxies []Server) (string, string, error) {
 	// No proxies have a public address set, return guessed value.
 	guessProxyHost := fmt.Sprintf("%v:%v", proxies[0].GetHostname(), defaults.HTTPListenPort)
 	return guessProxyHost, proxies[0].GetTeleportVersion(), nil
+}
+
+// ServerSpecV2Schema is JSON schema for server
+const ServerSpecV2Schema = `{
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+	  "version": {"type": "string"},
+	  "addr": {"type": "string"},
+	  "protocol": {"type": "integer"},
+	  "public_addr": {"type": "string"},
+	  "apps":  {
+		"type": ["array"],
+		"items": {
+		  "type": "object",
+		  "additionalProperties": false,
+		  "properties": {
+			  "name": {"type": "string"},
+			  "uri": {"type": "string"},
+			  "public_addr": {"type": "string"},
+			  "insecure_skip_verify": {"type": "boolean"},
+			  "rewrite": {
+			  "type": "object",
+			  "additionalProperties": false,
+			  "properties": {
+				"redirect": {"type": ["array"], "items": {"type": "string"}}
+			  }
+			},
+			"labels": {
+			  "type": "object",
+			  "additionalProperties": false,
+			  "patternProperties": {
+				"^.*$":  { "type": "string" }
+			  }
+			},
+			"commands": {
+			  "type": "object",
+			  "additionalProperties": false,
+			  "patternProperties": {
+				"^.*$": {
+				  "type": "object",
+				  "additionalProperties": false,
+				  "required": ["command"],
+				  "properties": {
+					  "command": {"type": "array", "items": {"type": "string"}},
+					"period": {"type": "string"},
+					"result": {"type": "string"}
+				  }
+				}
+			  }
+			}
+		  }
+		}
+	  },
+	  "hostname": {"type": "string"},
+	  "use_tunnel": {"type": "boolean"},
+	  "labels": {
+		  "type": "object",
+		  "additionalProperties": false,
+		"patternProperties": {
+		  "^.*$":  { "type": "string" }
+		}
+	  },
+	  "cmd_labels": {
+		"type": "object",
+		"additionalProperties": false,
+		"patternProperties": {
+		  "^.*$": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["command"],
+			"properties": {
+			  "command": {"type": "array", "items": {"type": "string"}},
+			  "period": {"type": "string"},
+			  "result": {"type": "string"}
+			}
+		  }
+		}
+	  },
+	  "kube_clusters": {
+		"type": "array",
+		"items": {
+		  "type": "object",
+		  "required": ["name"],
+		  "properties": {
+		  "name": {"type": "string"},
+		  "static_labels": {
+			"type": "object",
+			"additionalProperties": false,
+			"patternProperties": {
+			  "^.*$":  { "type": "string" }
+			}
+		  },
+		  "dynamic_labels": {
+			"type": "object",
+			"additionalProperties": false,
+			"patternProperties": {
+			  "^.*$": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["command"],
+				"properties": {
+				  "command": {"type": "array", "items": {"type": "string"}},
+				  "period": {"type": "string"},
+				  "result": {"type": "string"}
+				}
+			  }
+			}
+		  }
+		}
+	  }
+	},
+	"rotation": %v
+  }
+  }`
+
+// GetServerSchema returns role schema with optionally injected
+// schema for extensions
+func GetServerSchema() string {
+	return fmt.Sprintf(V2SchemaTemplate, MetadataSchema, fmt.Sprintf(ServerSpecV2Schema, RotationSchema), DefaultDefinitions)
+}
+
+// UnmarshalServerResource unmarshals role from JSON or YAML,
+// sets defaults and checks the schema
+func UnmarshalServerResource(data []byte, kind string, cfg *MarshalConfig) (Server, error) {
+	if len(data) == 0 {
+		return nil, trace.BadParameter("missing server data")
+	}
+
+	var h ResourceHeader
+	err := utils.FastUnmarshal(data, &h)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	switch h.Version {
+	case V2:
+		var s ServerV2
+
+		if cfg.SkipValidation {
+			if err := utils.FastUnmarshal(data, &s); err != nil {
+				return nil, trace.BadParameter(err.Error())
+			}
+		} else {
+			if err := utils.UnmarshalWithSchema(GetServerSchema(), &s, data); err != nil {
+				return nil, trace.BadParameter(err.Error())
+			}
+		}
+		s.Kind = kind
+		if err := s.CheckAndSetDefaults(); err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if cfg.ID != 0 {
+			s.SetResourceID(cfg.ID)
+		}
+		if !cfg.Expires.IsZero() {
+			s.SetExpiry(cfg.Expires)
+		}
+		return &s, nil
+	}
+	return nil, trace.BadParameter("server resource version %q is not supported", h.Version)
+}
+
+// UnmarshalServer unmarshals the Server resource from JSON.
+func UnmarshalServer(bytes []byte, kind string, opts ...MarshalOption) (Server, error) {
+	cfg, err := CollectOptions(opts)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	if len(bytes) == 0 {
+		return nil, trace.BadParameter("missing server data")
+	}
+
+	var h ResourceHeader
+	if err = utils.FastUnmarshal(bytes, &h); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	switch h.Version {
+	case V2:
+		var s ServerV2
+
+		if cfg.SkipValidation {
+			if err := utils.FastUnmarshal(bytes, &s); err != nil {
+				return nil, trace.BadParameter(err.Error())
+			}
+		} else {
+			if err := utils.UnmarshalWithSchema(GetServerSchema(), &s, bytes); err != nil {
+				return nil, trace.BadParameter(err.Error())
+			}
+		}
+		s.Kind = kind
+		if err := s.CheckAndSetDefaults(); err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if cfg.ID != 0 {
+			s.SetResourceID(cfg.ID)
+		}
+		if !cfg.Expires.IsZero() {
+			s.SetExpiry(cfg.Expires)
+		}
+		return &s, nil
+	}
+	return nil, trace.BadParameter("server resource version %q is not supported", h.Version)
+}
+
+// MarshalServer marshals the Server resource to JSON.
+func MarshalServer(server Server, opts ...MarshalOption) ([]byte, error) {
+	if err := server.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	cfg, err := CollectOptions(opts)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	switch server := server.(type) {
+	case *ServerV2:
+		if version := server.GetVersion(); version != V2 {
+			return nil, trace.BadParameter("mismatched server version %v and type %T", version, server)
+		}
+		if !cfg.PreserveResourceID {
+			// avoid modifying the original object
+			// to prevent unexpected data races
+			copy := *server
+			copy.SetResourceID(0)
+			server = &copy
+		}
+		return utils.FastMarshal(server)
+	default:
+		return nil, trace.BadParameter("unrecognized server version %T", server)
+	}
+}
+
+// UnmarshalServers unmarshals a list of Server resources.
+func UnmarshalServers(bytes []byte) ([]Server, error) {
+	var servers []ServerV2
+
+	err := utils.FastUnmarshal(bytes, &servers)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	out := make([]Server, len(servers))
+	for i, v := range servers {
+		out[i] = Server(&v)
+	}
+	return out, nil
+}
+
+// MarshalServers marshals a list of Server resources.
+func MarshalServers(s []Server) ([]byte, error) {
+	bytes, err := utils.FastMarshal(s)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return bytes, nil
 }

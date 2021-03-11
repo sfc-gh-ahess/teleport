@@ -89,15 +89,29 @@ func EventToGRPC(in types.Event) (*proto.Event, error) {
 			AccessRequest: r,
 		}
 	case *types.WebSessionV2:
-		if r.GetSubKind() != types.KindAppSession {
-			return nil, trace.BadParameter("only %v supported", types.KindAppSession)
+		switch r.GetSubKind() {
+		case types.KindAppSession:
+			out.Resource = &proto.Event_AppSession{
+				AppSession: r,
+			}
+		case types.KindWebSession:
+			out.Resource = &proto.Event_WebSession{
+				WebSession: r,
+			}
+		default:
+			return nil, trace.BadParameter("only %q supported", types.WebSessionSubKinds)
 		}
-		out.Resource = &proto.Event_AppSession{
-			AppSession: r,
+	case *types.WebTokenV3:
+		out.Resource = &proto.Event_WebToken{
+			WebToken: r,
 		}
 	case *types.RemoteClusterV3:
 		out.Resource = &proto.Event_RemoteCluster{
 			RemoteCluster: r,
+		}
+	case *types.DatabaseServerV3:
+		out.Resource = &proto.Event_DatabaseServer{
+			DatabaseServer: r,
 		}
 	default:
 		return nil, trace.BadParameter("resource type %T is not supported", in.Resource)
@@ -172,7 +186,16 @@ func EventFromGRPC(in proto.Event) (*types.Event, error) {
 	} else if r := in.GetAppSession(); r != nil {
 		out.Resource = r
 		return &out, nil
+	} else if r := in.GetWebSession(); r != nil {
+		out.Resource = r
+		return &out, nil
+	} else if r := in.GetWebToken(); r != nil {
+		out.Resource = r
+		return &out, nil
 	} else if r := in.GetRemoteCluster(); r != nil {
+		out.Resource = r
+		return &out, nil
+	} else if r := in.GetDatabaseServer(); r != nil {
 		out.Resource = r
 		return &out, nil
 	} else {

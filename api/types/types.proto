@@ -3,7 +3,7 @@ package types;
 
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
-import "github.com/gravitational/teleport/lib/wrappers/wrappers.proto";
+import "github.com/gravitational/teleport/api/types/wrappers/wrappers.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -23,13 +23,16 @@ message KeepAlive {
         (gogoproto.jsontag) = "expires"
     ];
     // Type is the type of keep alive, used by servers. At the moment only
-    // "node" and "app" are supported.
+    // "node", "app" and "database" are supported.
     enum KeepAliveType {
         UNKNOWN = 0;
         NODE = 1;
         APP = 2;
+        DATABASE = 3;
     }
     KeepAliveType Type = 9 [ (gogoproto.jsontag) = "type" ];
+    // HostID is an optional UUID of the host the resource belongs to.
+    string HostID = 10 [ (gogoproto.jsontag) = "host_id,omitempty" ];
 }
 
 // Metadata is resource metadata
@@ -128,7 +131,56 @@ message ResourceHeader {
         [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "metadata,omitempty" ];
 }
 
-// ServerV2 represents a Node, App, Proxy or Auth server in a Teleport cluster.
+// DatabaseServerV2 represents a database access server.
+message DatabaseServerV3 {
+    option (gogoproto.goproto_stringer) = false;
+    option (gogoproto.stringer) = false;
+
+    // Kind is the database server resource kind.
+    string Kind = 1 [ (gogoproto.jsontag) = "kind" ];
+    // SubKind is an optional resource subkind.
+    string SubKind = 2 [ (gogoproto.jsontag) = "sub_kind,omitempty" ];
+    // Version is the resource version.
+    string Version = 3 [ (gogoproto.jsontag) = "version" ];
+    // Metadata is the database server metadata.
+    Metadata Metadata = 4 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "metadata" ];
+    // Spec is the database server spec.
+    DatabaseServerSpecV3 Spec = 5 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "spec" ];
+}
+
+// DatabaseServerSpecV3 is the database server spec.
+message DatabaseServerSpecV3 {
+    // Description is a free-form text describing this database server.
+    string Description = 1 [ (gogoproto.jsontag) = "description,omitempty" ];
+    // Protocol is the database type e.g. postgres, mysql, etc.
+    string Protocol = 2 [ (gogoproto.jsontag) = "protocol" ];
+    // URI is the database connection address.
+    string URI = 3 [ (gogoproto.jsontag) = "uri" ];
+    // CACert is an optional base64-encoded database CA certificate.
+    bytes CACert = 4 [ (gogoproto.jsontag) = "ca_cert,omitempty" ];
+    // AWS contains AWS specific settings for RDS/Aurora databases.
+    AWS AWS = 5 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "aws" ];
+    // Version is the Teleport version that the server is running.
+    string Version = 6 [ (gogoproto.jsontag) = "version" ];
+    // Hostname is the database server hostname.
+    string Hostname = 7 [ (gogoproto.jsontag) = "hostname" ];
+    // HostID is the ID of the host the database server is running on.
+    string HostID = 8 [ (gogoproto.jsontag) = "host_id" ];
+    // DynamicLabels is the database server dynamic labels.
+    map<string, CommandLabelV2> DynamicLabels = 9
+        [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "dynamic_labels,omitempty" ];
+    // Rotation contains the server CA rotation information.
+    Rotation Rotation = 10
+        [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "rotation,omitempty" ];
+}
+
+// AWS contains AWS specific settings such as region.
+message AWS {
+    // Region is a AWS cloud region.
+    string Region = 1 [ (gogoproto.jsontag) = "region,omitempty" ];
+}
+
+// ServerV2 represents a Node, App, Database, Proxy or Auth server in a Teleport cluster.
 message ServerV2 {
     option (gogoproto.goproto_stringer) = false;
     option (gogoproto.stringer) = false;
@@ -307,10 +359,8 @@ message ProvisionTokenV1 {
     // Roles is a list of roles associated with the token,
     // that will be converted to metadata in the SSH and X509
     // certificates issued to the user of the token
-    repeated string Roles = 1 [
-        (gogoproto.jsontag) = "roles",
-        (gogoproto.casttype) = "github.com/gravitational/teleport.Role"
-    ];
+    repeated string Roles = 1
+        [ (gogoproto.jsontag) = "roles", (gogoproto.casttype) = "SystemRole" ];
     // Expires is a global expiry time header can be set on any resource in the
     // system.
     google.protobuf.Timestamp Expires = 2 [
@@ -344,10 +394,8 @@ message ProvisionTokenSpecV2 {
     // Roles is a list of roles associated with the token,
     // that will be converted to metadata in the SSH and X509
     // certificates issued to the user of the token
-    repeated string Roles = 1 [
-        (gogoproto.jsontag) = "roles",
-        (gogoproto.casttype) = "github.com/gravitational/teleport.Role"
-    ];
+    repeated string Roles = 1
+        [ (gogoproto.jsontag) = "roles", (gogoproto.casttype) = "SystemRole" ];
 }
 
 // StaticTokensV2 implements the StaticTokens interface.
@@ -475,7 +523,7 @@ message AuditConfig {
     wrappers.StringValues AuditEventsURI = 4 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "audit_events_uri,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/lib/wrappers.Strings"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Strings"
     ];
     // AuditTableName is a DB table name used for audits
     // Deprecated in favor of AuditEventsURI
@@ -647,7 +695,7 @@ message AccessRequestSpecV3 {
     wrappers.LabelValues ResolveAnnotations = 8 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "resolve_annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/lib/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
     ];
 
     // SystemAnnotations is a set of programmatically generated annotations attached
@@ -658,7 +706,7 @@ message AccessRequestSpecV3 {
     wrappers.LabelValues SystemAnnotations = 9 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "system_annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/lib/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
     ];
 }
 
@@ -847,6 +895,10 @@ message RoleOptions {
 
     // RequestPrompt is an optional message which tells users what they aught to
     string RequestPrompt = 12 [ (gogoproto.jsontag) = "request_prompt,omitempty" ];
+
+    // RequireSessionMFA specifies whether a user is required to do an MFA
+    // check for every session.
+    bool RequireSessionMFA = 13 [ (gogoproto.jsontag) = "require_session_mfa,omitempty" ];
 }
 
 // RoleConditions is a set of conditions that must all match to be allowed or
@@ -901,6 +953,18 @@ message RoleConditions {
         (gogoproto.jsontag) = "kubernetes_labels,omitempty",
         (gogoproto.customtype) = "Labels"
     ];
+
+    // DatabaseLabels are used in RBAC system to allow/deny access to databases.
+    wrappers.LabelValues DatabaseLabels = 11 [
+        (gogoproto.nullable) = false,
+        (gogoproto.jsontag) = "db_labels,omitempty",
+        (gogoproto.customtype) = "Labels"
+    ];
+
+    // DatabaseNames is a list of database names this role is allowed to connect to.
+    repeated string DatabaseNames = 12 [ (gogoproto.jsontag) = "db_names,omitempty" ];
+    // DatabaseUsers is a list of databaes users this role is allowed to connect as.
+    repeated string DatabaseUsers = 13 [ (gogoproto.jsontag) = "db_users,omitempty" ];
 }
 
 // AccessRequestConditions is a matcher for allow/deny restrictions on
@@ -923,7 +987,7 @@ message AccessRequestConditions {
     wrappers.LabelValues Annotations = 3 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/lib/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
     ];
 }
 
@@ -1001,7 +1065,7 @@ message UserSpecV2 {
     wrappers.LabelValues Traits = 5 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "traits,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/lib/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
     ];
 
     // Status is a login status of the user
@@ -1090,15 +1154,48 @@ message LocalAuthSecrets {
     // PasswordHash encodes a combined salt & hash for password verification.
     bytes PasswordHash = 1 [ (gogoproto.jsontag) = "password_hash,omitempty" ];
 
-    // TOTPKey is the key used for Time-based One Time Password varification.
+    // Deprecated 2nd factor fields, use MFA below instead.
     string TOTPKey = 2 [ (gogoproto.jsontag) = "totp_key,omitempty" ];
-
-    // U2FRegistration holds Universal Second Factor registration info.
     U2FRegistrationData U2FRegistration = 3 [ (gogoproto.jsontag) = "u2f_registration,omitempty" ];
-
-    // U2FCounter holds the highest seen Universal Second Factor registration
-    // count.
     uint32 U2FCounter = 4 [ (gogoproto.jsontag) = "u2f_counter,omitempty" ];
+
+    repeated MFADevice MFA = 5 [ (gogoproto.jsontag) = "mfa,omitempty" ];
+}
+
+// MFADevice is a multi-factor authentication device, such as a security key or
+// an OTP app.
+message MFADevice {
+    // Boilerplate for implementing the Resource interface.
+    string kind = 1;
+    string sub_kind = 2;
+    string version = 3;
+    Metadata metadata = 4 [ (gogoproto.nullable) = false ];
+
+    // ID is a UUID of this device.
+    string id = 5;
+
+    google.protobuf.Timestamp added_at = 6
+        [ (gogoproto.stdtime) = true, (gogoproto.nullable) = false ];
+    google.protobuf.Timestamp last_used = 7
+        [ (gogoproto.stdtime) = true, (gogoproto.nullable) = false ];
+
+    oneof device {
+        TOTPDevice totp = 8;
+        U2FDevice u2f = 9;
+    }
+}
+
+// TOTPDevice holds the TOTP-specific fields of MFADevice.
+message TOTPDevice { string key = 1; }
+
+// U2FDevice holds the U2F-specific fields of MFADevice.
+message U2FDevice {
+    // KeyHandle uniquely identifies a key on a device
+    bytes key_handle = 1;
+    // PubKey is an DER encoded ecdsa public key
+    bytes pub_key = 2;
+    // Counter is the latest seen value of the U2F usage counter.
+    uint32 counter = 3;
 }
 
 // ConnectorRef holds information about OIDC connector
@@ -1350,4 +1447,64 @@ message KubernetesCluster {
     // Used for RBAC.
     map<string, CommandLabelV2> DynamicLabels = 3
         [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "dynamic_labels,omitempty" ];
+}
+
+// WebTokenV3 describes a web token. Web tokens are used as a transport to relay bearer tokens
+// to the client.
+// Initially bound to a web session, these have been factored out into a separate resource to
+// enable separate lifecycle management.
+message WebTokenV3 {
+    option (gogoproto.goproto_stringer) = false;
+    option (gogoproto.stringer) = false;
+
+    // Kind is a resource kind
+    string Kind = 1 [ (gogoproto.jsontag) = "kind" ];
+    // SubKind is an optional resource sub kind
+    string SubKind = 2 [ (gogoproto.jsontag) = "sub_kind,omitempty" ];
+    // Version is the resource version
+    string Version = 3 [ (gogoproto.jsontag) = "version" ];
+    // Metadata is resource metadata
+    Metadata Metadata = 4 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "metadata" ];
+    // Spec defines the web token
+    WebTokenSpecV3 Spec = 5 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "spec" ];
+}
+
+// WebTokenSpecV3 is a unique time-limited token bound to a user's web session
+message WebTokenSpecV3 {
+    // User specifies the user the token is bound to.
+    string User = 1 [ (gogoproto.jsontag) = "user" ];
+    // Token specifies the token's value.
+    string Token = 2 [ (gogoproto.jsontag) = "token" ];
+}
+
+// GetWebSessionRequest describes a request to query a web session
+message GetWebSessionRequest {
+    // User specifies the user the web session is for.
+    string User = 1 [ (gogoproto.jsontag) = "user" ];
+    // SessionID specifies the web session ID.
+    string SessionID = 2 [ (gogoproto.jsontag) = "session_id" ];
+}
+
+// DeleteWebSessionRequest describes a request to delete a web session
+message DeleteWebSessionRequest {
+    // User specifies the user the session is bound to
+    string User = 1 [ (gogoproto.jsontag) = "user" ];
+    // SessionID specifies the web session ID to delete.
+    string SessionID = 2 [ (gogoproto.jsontag) = "session_id" ];
+}
+
+// GetWebTokenRequest describes a request to query a web token
+message GetWebTokenRequest {
+    // User specifies the user the token is for.
+    string User = 1 [ (gogoproto.jsontag) = "user" ];
+    // Token specifies the token to get.
+    string Token = 2 [ (gogoproto.jsontag) = "token" ];
+}
+
+// DeleteWebTokenRequest describes a request to delete a web token
+message DeleteWebTokenRequest {
+    // User specifies the user the token is for.
+    string User = 1 [ (gogoproto.jsontag) = "user" ];
+    // Token specifies the token to delete.
+    string Token = 2 [ (gogoproto.jsontag) = "token" ];
 }

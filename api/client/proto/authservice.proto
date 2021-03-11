@@ -5,8 +5,8 @@ import "gogoproto/gogo.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "github.com/gravitational/teleport/api/types/types.proto";
-import "github.com/gravitational/teleport/lib/events/events.proto";
-import "github.com/gravitational/teleport/lib/wrappers/wrappers.proto";
+import "github.com/gravitational/teleport/api/types/wrappers/wrappers.proto";
+import "github.com/gravitational/teleport/api/types/events/events.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -68,6 +68,13 @@ message Event {
         // RemoteCluster is a resource for remote clusters
         types.RemoteClusterV3 RemoteCluster = 16
             [ (gogoproto.jsontag) = "remote_cluster,omitempty" ];
+        // DatabaseServer is a resource for database servers.
+        types.DatabaseServerV3 DatabaseServer = 17
+            [ (gogoproto.jsontag) = "database_server,omitempty" ];
+        // WebSession is a regular web session.
+        types.WebSessionV2 WebSession = 18 [ (gogoproto.jsontag) = "web_session,omitempty" ];
+        // WebToken is a web token.
+        types.WebTokenV3 WebToken = 19 [ (gogoproto.jsontag) = "web_token,omitempty" ];
     }
 }
 
@@ -91,6 +98,8 @@ message WatchKind {
     // Filter is an optional mapping of custom filter parameters.
     // Valid values vary by resource kind.
     map<string, string> Filter = 4 [ (gogoproto.jsontag) = "filter,omitempty" ];
+    // SubKind is a resource subkind to watch
+    string SubKind = 5 [ (gogoproto.jsontag) = "sub_kind,omitempty" ];
 }
 
 // Set of certificates corresponding to a single public key.
@@ -130,6 +139,35 @@ message UserCertsRequest {
     // KubernetesCluster specifies the target kubernetes cluster for TLS
     // identities. This can be empty on older Teleport clients.
     string KubernetesCluster = 7 [ (gogoproto.jsontag) = "kubernetes_cluster,omitempty" ];
+    // RouteToDatabase specifies the target database proxy name to encode into
+    // certificate so database client requests are routed appropriately.
+    RouteToDatabase RouteToDatabase = 8
+        [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "route_to_database,omitempty" ];
+
+    // NodeName is the name of the SSH node that this user certificate will be
+    // scoped to.
+    string NodeName = 9 [ (gogoproto.jsontag) = "node_name,omitempty" ];
+
+    enum CertUsage {
+        All = 0;
+        SSH = 1;
+        Kubernetes = 2;
+        Database = 3;
+    }
+    // CertUsage limits the resulting user certificate to a single protocol.
+    CertUsage Usage = 10 [ (gogoproto.jsontag) = "usage,omitempty" ];
+}
+
+// RouteToDatabase combines parameters for database service routing information.
+message RouteToDatabase {
+    // ServiceName is the Teleport database proxy service name the cert is for.
+    string ServiceName = 1 [ (gogoproto.jsontag) = "service_name" ];
+    // Protocol is the type of the database the cert is for.
+    string Protocol = 2 [ (gogoproto.jsontag) = "protocol" ];
+    // Username is an optional database username to embed.
+    string Username = 3 [ (gogoproto.jsontag) = "username,omitempty" ];
+    // Database is an optional database name to embed.
+    string Database = 4 [ (gogoproto.jsontag) = "database,omitempty" ];
 }
 
 // GetUserRequest specifies parameters for the GetUser method.
@@ -176,7 +214,7 @@ message RequestStateSetter {
     wrappers.LabelValues Annotations = 5 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/lib/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
     ];
     // Roles, if present, overrides the existing set of roles associated
     // with the access request.
@@ -216,6 +254,30 @@ message PingResponse {
     string ClusterName = 1 [ (gogoproto.jsontag) = "cluster_name" ];
     // ServerVersion is the version of the auth server.
     string ServerVersion = 2 [ (gogoproto.jsontag) = "server_version" ];
+    // ServerFeatures are the features supported by the auth server.
+    Features ServerFeatures = 3 [ (gogoproto.jsontag) = "server_features" ];
+    // ProxyPublicAddr is the server's public proxy address.
+    string ProxyPublicAddr = 4 [ (gogoproto.jsontag) = "proxy_public_addr" ];
+}
+
+// Features are auth server features.
+message Features {
+    // Kubernetes enables Kubernetes Access product
+    bool Kubernetes = 1 [ (gogoproto.jsontag) = "kubernetes" ];
+    // App enables Application Access product
+    bool App = 2 [ (gogoproto.jsontag) = "app" ];
+    // DB enables database access product
+    bool DB = 3 [ (gogoproto.jsontag) = "db" ];
+    // OIDC enables OIDC connectors
+    bool OIDC = 4 [ (gogoproto.jsontag) = "oidc" ];
+    // SAML enables SAML connectors
+    bool SAML = 5 [ (gogoproto.jsontag) = "saml" ];
+    // AccessControls enables FIPS access controls
+    bool AccessControls = 6 [ (gogoproto.jsontag) = "access_controls" ];
+    // AdvancedAccessWorkflows enables advanced access workflows
+    bool AdvancedAccessWorkflows = 7 [ (gogoproto.jsontag) = "advanced_access_workflows" ];
+    // Cloud enables some cloud-related features
+    bool Cloud = 8 [ (gogoproto.jsontag) = "cloud" ];
 }
 
 // DeleteUserRequest is the input value for the DeleteUser method.
@@ -365,6 +427,30 @@ message CreateAppSessionResponse {
 // DeleteAppSessionRequest contains the parameters used to remove an application web session.
 message DeleteAppSessionRequest { string SessionID = 1 [ (gogoproto.jsontag) = "session_id" ]; }
 
+// GetWebSessionResponse contains the requested web session.
+message GetWebSessionResponse {
+    // Session is the web session.
+    types.WebSessionV2 Session = 1 [ (gogoproto.jsontag) = "session" ];
+}
+
+// GetWebSessionsResponse contains all the requested web sessions.
+message GetWebSessionsResponse {
+    // Sessions is a list of web sessions.
+    repeated types.WebSessionV2 Sessions = 1 [ (gogoproto.jsontag) = "sessions" ];
+}
+
+// GetWebTokenResponse contains the requested web token.
+message GetWebTokenResponse {
+    // Token is the web token being requested.
+    types.WebTokenV3 Token = 1 [ (gogoproto.jsontag) = "token" ];
+}
+
+// GetWebTokensResponse contains all the requested web tokens.
+message GetWebTokensResponse {
+    // Tokens is a list of web tokens.
+    repeated types.WebTokenV3 Tokens = 1 [ (gogoproto.jsontag) = "tokens" ];
+}
+
 // GetKubeServicesRequest are the parameters used to request kubernetes services.
 message GetKubeServicesRequest {}
 
@@ -388,6 +474,317 @@ message DeleteKubeServiceRequest {
 // DeleteAllKubeServicesRequest are the parameters used to remove all kubernetes services.
 message DeleteAllKubeServicesRequest {}
 
+// GetDatabaseServersRequest is a request to return all registered database servers.
+message GetDatabaseServersRequest {
+    // Namespace is the database server namespace.
+    string Namespace = 1 [ (gogoproto.jsontag) = "namespace" ];
+    // SkipValidation allows to turn off JSON schema validation.
+    bool SkipValidation = 2 [ (gogoproto.jsontag) = "skip_validation" ];
+}
+
+// GetDatabaseServersResponse contains all registered database servers.
+message GetDatabaseServersResponse {
+    // Servers is a list of database proxy servers.
+    repeated types.DatabaseServerV3 Servers = 1 [ (gogoproto.jsontag) = "servers" ];
+}
+
+// UpsertDatabaseServerRequest is a request to register database server.
+message UpsertDatabaseServerRequest {
+    // Server is the database proxy server to register.
+    types.DatabaseServerV3 Server = 1 [ (gogoproto.jsontag) = "server" ];
+}
+
+// DeleteDatabaseServerRequest is a request to delete a database server.
+message DeleteDatabaseServerRequest {
+    // Namespace is the database server namespace.
+    string Namespace = 1 [ (gogoproto.jsontag) = "namespace" ];
+    // HostID is the ID of the host database server is running on.
+    string HostID = 2 [ (gogoproto.jsontag) = "host_id" ];
+    // Name is the database server name.
+    string Name = 3 [ (gogoproto.jsontag) = "name" ];
+}
+
+// DeleteAllDatabaseServersRequest is a request to delete all database servers.
+message DeleteAllDatabaseServersRequest {
+    // Namespace is the database servers namespace.
+    string Namespace = 1 [ (gogoproto.jsontag) = "namespace" ];
+}
+
+// DatabaseCSRRequest is a request to generate a client certificate used
+// by the proxy to authenticate with a remote database service.
+message DatabaseCSRRequest {
+    // CSR is the request to sign.
+    bytes CSR = 1 [ (gogoproto.jsontag) = "csr" ];
+    // ClusterName is the name of the cluster the request is for.
+    string ClusterName = 2 [ (gogoproto.jsontag) = "cluster_name" ];
+}
+
+// DatabaseCSRResponse contains the signed database certificate.
+message DatabaseCSRResponse {
+    // Cert is the signed certificate.
+    bytes Cert = 1 [ (gogoproto.jsontag) = "cert" ];
+    // CACerts is a list of certificate authorities.
+    repeated bytes CACerts = 2 [ (gogoproto.jsontag) = "ca_certs" ];
+}
+
+// DatabaseCertRequest is a request to generate a client certificate used
+// by a database service to authenticate with a database instance.
+message DatabaseCertRequest {
+    // CSR is the request to sign.
+    bytes CSR = 1 [ (gogoproto.jsontag) = "csr" ];
+    // ServerName is the SAN to include in the certificate.
+    string ServerName = 2 [ (gogoproto.jsontag) = "server_name" ];
+    // TTL is the certificate validity period.
+    int64 TTL = 3 [ (gogoproto.jsontag) = "ttl", (gogoproto.casttype) = "Duration" ];
+}
+
+// DatabaseCertResponse contains the signed certificate.
+message DatabaseCertResponse {
+    // Cert is the signed certificate.
+    bytes Cert = 1 [ (gogoproto.jsontag) = "cert" ];
+    // CACerts is a list of certificate authorities.
+    repeated bytes CACerts = 2 [ (gogoproto.jsontag) = "ca_certs" ];
+}
+
+// GetRoleRequest is a request to query a role.
+message GetRoleRequest {
+    // Name is the name of the role to get.
+    string Name = 1;
+}
+
+// GetRolesResponse is a response to querying for all roles.
+message GetRolesResponse {
+    // Roles is a list of roles.
+    repeated types.RoleV3 Roles = 1;
+}
+
+// DeleteRoleRequest is a request to delete a role.
+message DeleteRoleRequest {
+    // Name is the role name to delete.
+    string Name = 1;
+}
+
+// MFAAuthenticateChallenge is a challenge for all MFA devices registered for a
+// user.
+message MFAAuthenticateChallenge {
+    // U2F contains one U2FChallenge per U2F device registered for a
+    // user. Each challenge is unique.
+    repeated U2FChallenge U2F = 1;
+    // TOTP is a challenge for all TOTP devices registered for a user. When
+    // this field is set, any TOTP device a user has registered can be used to
+    // respond.
+    TOTPChallenge TOTP = 2;
+}
+
+// MFAAuthenticateResponse is a response to MFAAuthenticateChallenge using one
+// of the MFA devices registered for a user.
+message MFAAuthenticateResponse {
+    oneof Response {
+        U2FResponse U2F = 1;
+        TOTPResponse TOTP = 2;
+    }
+}
+
+// U2FChallenge is a U2F auth challenge.
+message U2FChallenge {
+    string KeyHandle = 1;
+    string Challenge = 2;
+    string AppID = 3;
+    string Version = 4;
+}
+
+// U2FResponse is a U2F auth challenge response.
+message U2FResponse {
+    string KeyHandle = 1;
+    string ClientData = 2;
+    string Signature = 3;
+}
+
+// TOTPChallenge is a challenge for all TOTP devices registered for a user.
+message TOTPChallenge {
+    // TOTP protocol has no challenge per se, but the user has to provide a
+    // valid token in response. TOTPChallenge exists only to signal to the user
+    // that TOTP MFA is supported, which means that the user has a TOTP device
+    // registered.
+}
+
+// TOTPResponse is a response to TOTPChallenge.
+message TOTPResponse { string Code = 1; }
+
+// MFARegisterChallenge is a challenge for registering a new MFA device.
+message MFARegisterChallenge {
+    // Request depends on the type of the MFA device being registered.
+    oneof Request {
+        U2FRegisterChallenge U2F = 1;
+        TOTPRegisterChallenge TOTP = 2;
+    }
+}
+
+// MFARegisterResponse is a response to MFARegisterChallenge.
+message MFARegisterResponse {
+    oneof Response {
+        U2FRegisterResponse U2F = 1;
+        TOTPRegisterResponse TOTP = 2;
+    }
+}
+
+// U2FRegisterChallenge is a challenge for registering a new U2F device.
+message U2FRegisterChallenge {
+    string Challenge = 1;
+    string AppID = 2;
+    string Version = 3;
+}
+
+// U2FRegisterResponse is a response to U2FRegisterChallenge.
+message U2FRegisterResponse {
+    string RegistrationData = 1;
+    string ClientData = 2;
+}
+
+// TOTPRegisterChallenge is a challenge for registering a new TOTP device.
+message TOTPRegisterChallenge {
+    // Secret is a secret shared by client and server to generate codes.
+    string Secret = 1;
+    // Issuer is the name of the Teleport cluster.
+    string Issuer = 2;
+    // PeriodSeconds is a period for TOTP code rotation, in seconds.
+    uint32 PeriodSeconds = 3;
+    // Algorithm is the TOTP hashing algorithm.
+    string Algorithm = 4;
+    // Digits is the number of digits in the TOTP code.
+    uint32 Digits = 5;
+    // Account is the account name for this user.
+    string Account = 6;
+}
+
+// TOTPRegisterResponse is a response to TOTPRegisterChallenge.
+message TOTPRegisterResponse { string Code = 1; }
+
+// AddMFADeviceRequest is a message sent by the client during AddMFADevice RPC.
+message AddMFADeviceRequest {
+    oneof Request {
+        // Init describes the new device.
+        AddMFADeviceRequestInit Init = 1;
+        // ExistingMFAResponse is a response to ExistingMFAChallenge auth
+        // challenge.
+        MFAAuthenticateResponse ExistingMFAResponse = 2;
+        // NewMFARegisterResponse is a response to NewMFARegisterChallenge
+        // registration challenge.
+        MFARegisterResponse NewMFARegisterResponse = 3;
+    }
+}
+
+// AddMFADeviceResponse is a message sent by the server during AddMFADevice
+// RPC.
+message AddMFADeviceResponse {
+    oneof Response {
+        // ExistingMFAChallenge is an auth challenge using an existing MFA
+        // device.
+        MFAAuthenticateChallenge ExistingMFAChallenge = 1;
+        // NewMFARegisterChallenge is a registration challenge for a new MFA
+        // device.
+        MFARegisterChallenge NewMFARegisterChallenge = 2;
+        // Ack is a confirmation of successful device registration.
+        AddMFADeviceResponseAck Ack = 3;
+    }
+}
+
+// AddMFADeviceRequestInit describes the new MFA device.
+message AddMFADeviceRequestInit {
+    string DeviceName = 1;
+    enum DeviceType {
+        TOTP = 0;
+        U2F = 1;
+    }
+    DeviceType Type = 2;
+}
+
+// AddMFADeviceResponseAck is a confirmation of successful device registration.
+message AddMFADeviceResponseAck { types.MFADevice Device = 1; }
+
+// DeleteMFADeviceRequest is a message sent by the client during
+// DeleteMFADevice RPC.
+message DeleteMFADeviceRequest {
+    oneof Request {
+        // Init describes the device to be deleted.
+        DeleteMFADeviceRequestInit Init = 1;
+        // MFAResponse is a response to MFAChallenge auth challenge.
+        MFAAuthenticateResponse MFAResponse = 2;
+    }
+}
+
+message DeleteMFADeviceResponse {
+    oneof Response {
+        // MFAChallenge is an auth challenge using any existing MFA device.
+        MFAAuthenticateChallenge MFAChallenge = 1;
+        // Ack is a confirmation of successful device deletion.
+        DeleteMFADeviceResponseAck Ack = 2;
+    }
+}
+
+// DeleteMFADeviceRequestInit describes the device to be deleted.
+message DeleteMFADeviceRequestInit {
+    // DeviceName is an MFA device name or ID to be deleted.
+    string DeviceName = 1;
+}
+
+// DeleteMFADeviceResponseAck is a confirmation of successful device deletion.
+message DeleteMFADeviceResponseAck {}
+
+// GetMFADeviceRequest is a request for MFA devices for the calling user.
+message GetMFADevicesRequest {}
+
+// GetMFADeviceResponse is a response for GetMFADevices RPC.
+message GetMFADevicesResponse { repeated types.MFADevice Devices = 1; }
+
+// UserSingleUseCertsRequest is a request for a single-use user certificate.
+message UserSingleUseCertsRequest {
+    oneof Request {
+        UserCertsRequest Init = 1;
+        MFAAuthenticateResponse MFAResponse = 2;
+    }
+}
+
+// UserSingleUseCertsResponse is a response with a single-use user certificate.
+message UserSingleUseCertsResponse {
+    oneof Response {
+        MFAAuthenticateChallenge MFAChallenge = 1;
+        SingleUseUserCert Cert = 2;
+    }
+}
+
+// IsMFARequiredRequest is a request to check whether MFA is required to access
+// the Target.
+message IsMFARequiredRequest {
+    oneof Target {
+        // KubernetesCluster specifies the target kubernetes cluster.
+        string KubernetesCluster = 1;
+        // RouteToDatabase specifies the target database proxy name.
+        RouteToDatabase Database = 2;
+        // Node specifies the target SSH node.
+        NodeLogin Node = 3;
+    }
+}
+
+// NodeLogin specifies an SSH node and OS login.
+message NodeLogin {
+    // Node can be node's hostname or UUID.
+    string Node = 1;
+    // Login is the OS login name.
+    string Login = 2;
+}
+
+// IsMFARequiredResponse is a response for MFA requirement check.
+message IsMFARequiredResponse { bool Required = 1; }
+
+// SingleUseUserCert is a single-use user certificate, either SSH or TLS.
+message SingleUseUserCert {
+    oneof Cert {
+        bytes SSH = 1;
+        bytes TLS = 2;
+    }
+}
+
 // AuthService is authentication/authorization service implementation
 service AuthService {
     // SendKeepAlives allows node to send a stream of keep alive requests
@@ -396,13 +793,16 @@ service AuthService {
     rpc WatchEvents(Watch) returns (stream Event);
     // UpsertNode upserts node
     rpc UpsertNode(types.ServerV2) returns (types.KeepAlive);
-    // GenerateUserCerts generates a set of user certificates for use by `tctl
-    // auth sign`.
+    // GenerateUserCerts generates a set of user certificates.
     rpc GenerateUserCerts(UserCertsRequest) returns (Certs);
-    // GetUser gets a user resource by name.
-    rpc GetUser(GetUserRequest) returns (types.UserV2);
-    // GetUsers gets all current user resources.
-    rpc GetUsers(GetUsersRequest) returns (stream types.UserV2);
+    // GenerateUserSingleUseCerts generates a set of single-use user
+    // certificates.
+    rpc GenerateUserSingleUseCerts(stream UserSingleUseCertsRequest)
+        returns (stream UserSingleUseCertsResponse);
+    // IsMFARequired checks whether MFA is required to access the specified
+    // target.
+    rpc IsMFARequired(IsMFARequiredRequest) returns (IsMFARequiredResponse);
+
     // GetAccessRequests gets all pending access requests.
     rpc GetAccessRequests(types.AccessRequestFilter) returns (AccessRequests);
     // CreateAccessRequest creates a new access request.
@@ -422,6 +822,7 @@ service AuthService {
     // to mimic the behavior of the proxy's Ping method, and may be used by
     // clients for verification or configuration on startup.
     rpc Ping(PingRequest) returns (PingResponse);
+
     // RotateResetPasswordTokenSecrets rotates token secrets for a given tokenID.
     rpc RotateResetPasswordTokenSecrets(RotateResetPasswordTokenSecretsRequest)
         returns (types.ResetPasswordTokenSecretsV3);
@@ -430,6 +831,11 @@ service AuthService {
     // CreateResetPasswordToken creates ResetPasswordToken.
     rpc CreateResetPasswordToken(CreateResetPasswordTokenRequest)
         returns (types.ResetPasswordTokenV3);
+
+    // GetUser gets a user resource by name.
+    rpc GetUser(GetUserRequest) returns (types.UserV2);
+    // GetUsers gets all current user resources.
+    rpc GetUsers(GetUsersRequest) returns (stream types.UserV2);
     // CreateUser inserts a new user entry to a backend.
     rpc CreateUser(types.UserV2) returns (google.protobuf.Empty);
     // UpdateUser updates an existing user in a backend.
@@ -477,6 +883,24 @@ service AuthService {
     // DeleteAllAppSessions removes all application web sessions.
     rpc DeleteAllAppSessions(google.protobuf.Empty) returns (google.protobuf.Empty);
 
+    // GetWebSession gets a web session.
+    rpc GetWebSession(types.GetWebSessionRequest) returns (GetWebSessionResponse);
+    // GetWebSessions gets all web sessions.
+    rpc GetWebSessions(google.protobuf.Empty) returns (GetWebSessionsResponse);
+    // DeleteWebSession deletes a web session.
+    rpc DeleteWebSession(types.DeleteWebSessionRequest) returns (google.protobuf.Empty);
+    // DeleteAllWebSessions deletes all web sessions.
+    rpc DeleteAllWebSessions(google.protobuf.Empty) returns (google.protobuf.Empty);
+
+    // GetWebToken gets a web token.
+    rpc GetWebToken(types.GetWebTokenRequest) returns (GetWebTokenResponse);
+    // GetWebTokens gets all web tokens.
+    rpc GetWebTokens(google.protobuf.Empty) returns (GetWebTokensResponse);
+    // DeleteWebToken deletes a web token.
+    rpc DeleteWebToken(types.DeleteWebTokenRequest) returns (google.protobuf.Empty);
+    // DeleteAllWebTokens deletes all web tokens.
+    rpc DeleteAllWebTokens(google.protobuf.Empty) returns (google.protobuf.Empty);
+
     // UpdateRemoteCluster updates remote cluster
     rpc UpdateRemoteCluster(types.RemoteClusterV3) returns (google.protobuf.Empty);
 
@@ -488,4 +912,53 @@ service AuthService {
     rpc DeleteKubeService(DeleteKubeServiceRequest) returns (google.protobuf.Empty);
     // DeleteAllKubeServices removes all kubernetes services.
     rpc DeleteAllKubeServices(DeleteAllKubeServicesRequest) returns (google.protobuf.Empty);
+
+    // GetDatabaseServers returns all registered database proxy servers.
+    rpc GetDatabaseServers(GetDatabaseServersRequest) returns (GetDatabaseServersResponse);
+    // UpsertDatabaseServer registers a new database proxy server.
+    rpc UpsertDatabaseServer(UpsertDatabaseServerRequest) returns (types.KeepAlive);
+    // DeleteDatabaseServer removes the specified database proxy server.
+    rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (google.protobuf.Empty);
+    // DeleteAllDatabaseServers removes all registered database proxy servers.
+    rpc DeleteAllDatabaseServers(DeleteAllDatabaseServersRequest) returns (google.protobuf.Empty);
+
+    // SignDatabaseCSR generates client certificate used by proxy to
+    // authenticate with a remote database service.
+    rpc SignDatabaseCSR(DatabaseCSRRequest) returns (DatabaseCSRResponse);
+    // GenerateDatabaseCert generates client certificate used by a database
+    // service to authenticate with the database instance.
+    rpc GenerateDatabaseCert(DatabaseCertRequest) returns (DatabaseCertResponse);
+
+    // GetRole retrieves a role described by the given request.
+    rpc GetRole(GetRoleRequest) returns (types.RoleV3);
+    // GetRole retrieves all roles.
+    rpc GetRoles(google.protobuf.Empty) returns (GetRolesResponse);
+    // UpsertRole upserts a role in a backend.
+    rpc UpsertRole(types.RoleV3) returns (google.protobuf.Empty);
+    // DeleteRole deletes an existing role in a backend described by the given request.
+    rpc DeleteRole(DeleteRoleRequest) returns (google.protobuf.Empty);
+
+    // AddMFADevice adds an MFA device for the user calling this RPC.
+    //
+    // The RPC is streaming both ways and the message sequence is:
+    // (-> means client-to-server, <- means server-to-client)
+    // -> Init
+    // <- ExistingMFAChallenge
+    // -> ExistingMFAResponse
+    // <- NewMFARegisterChallenge
+    // -> NewMFARegisterResponse
+    // <- Ack
+    rpc AddMFADevice(stream AddMFADeviceRequest) returns (stream AddMFADeviceResponse);
+    // DeleteMFADevice deletes an MFA device for the user calling this RPC.
+    //
+    // The RPC is streaming both ways and the message sequence is:
+    // (-> means client-to-server, <- means server-to-client)
+    // -> Init
+    // <- MFAChallenge
+    // -> MFAResponse
+    // <- Ack
+    rpc DeleteMFADevice(stream DeleteMFADeviceRequest) returns (stream DeleteMFADeviceResponse);
+    // GetMFADevices returns all MFA devices registered for the user calling
+    // this RPC.
+    rpc GetMFADevices(GetMFADevicesRequest) returns (GetMFADevicesResponse);
 }

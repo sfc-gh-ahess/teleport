@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/types"
@@ -81,17 +82,19 @@ func TestAuthSignKubeconfig(t *testing.T) {
 		{
 			desc: "--proxy specified",
 			ac: AuthCommand{
-				output:       filepath.Join(tmpDir, "kubeconfig"),
-				outputFormat: identityfile.FormatKubernetes,
-				proxyAddr:    "proxy-from-flag.example.com",
+				output:        filepath.Join(tmpDir, "kubeconfig"),
+				outputFormat:  identityfile.FormatKubernetes,
+				signOverwrite: true,
+				proxyAddr:     "proxy-from-flag.example.com",
 			},
 			wantAddr: "proxy-from-flag.example.com",
 		},
 		{
 			desc: "k8s proxy running locally with public_addr",
 			ac: AuthCommand{
-				output:       filepath.Join(tmpDir, "kubeconfig"),
-				outputFormat: identityfile.FormatKubernetes,
+				output:        filepath.Join(tmpDir, "kubeconfig"),
+				outputFormat:  identityfile.FormatKubernetes,
+				signOverwrite: true,
 				config: &service.Config{Proxy: service.ProxyConfig{Kube: service.KubeProxyConfig{
 					Enabled:     true,
 					PublicAddrs: []utils.NetAddr{{Addr: "proxy-from-config.example.com:3026"}},
@@ -102,8 +105,9 @@ func TestAuthSignKubeconfig(t *testing.T) {
 		{
 			desc: "k8s proxy running locally without public_addr",
 			ac: AuthCommand{
-				output:       filepath.Join(tmpDir, "kubeconfig"),
-				outputFormat: identityfile.FormatKubernetes,
+				output:        filepath.Join(tmpDir, "kubeconfig"),
+				outputFormat:  identityfile.FormatKubernetes,
+				signOverwrite: true,
 				config: &service.Config{Proxy: service.ProxyConfig{
 					Kube: service.KubeProxyConfig{
 						Enabled: true,
@@ -116,8 +120,9 @@ func TestAuthSignKubeconfig(t *testing.T) {
 		{
 			desc: "k8s proxy from cluster info",
 			ac: AuthCommand{
-				output:       filepath.Join(tmpDir, "kubeconfig"),
-				outputFormat: identityfile.FormatKubernetes,
+				output:        filepath.Join(tmpDir, "kubeconfig"),
+				outputFormat:  identityfile.FormatKubernetes,
+				signOverwrite: true,
 				config: &service.Config{Proxy: service.ProxyConfig{
 					Kube: service.KubeProxyConfig{
 						Enabled: false,
@@ -129,9 +134,10 @@ func TestAuthSignKubeconfig(t *testing.T) {
 		{
 			desc: "--kube-cluster specified with valid cluster",
 			ac: AuthCommand{
-				output:       filepath.Join(tmpDir, "kubeconfig"),
-				outputFormat: identityfile.FormatKubernetes,
-				leafCluster:  remoteCluster.GetMetadata().Name,
+				output:        filepath.Join(tmpDir, "kubeconfig"),
+				outputFormat:  identityfile.FormatKubernetes,
+				signOverwrite: true,
+				leafCluster:   remoteCluster.GetMetadata().Name,
 				config: &service.Config{Proxy: service.ProxyConfig{
 					Kube: service.KubeProxyConfig{
 						Enabled: false,
@@ -143,9 +149,10 @@ func TestAuthSignKubeconfig(t *testing.T) {
 		{
 			desc: "--kube-cluster specified with invalid cluster",
 			ac: AuthCommand{
-				output:       filepath.Join(tmpDir, "kubeconfig"),
-				outputFormat: identityfile.FormatKubernetes,
-				leafCluster:  "doesnotexist.example.com",
+				output:        filepath.Join(tmpDir, "kubeconfig"),
+				outputFormat:  identityfile.FormatKubernetes,
+				signOverwrite: true,
+				leafCluster:   "doesnotexist.example.com",
 				config: &service.Config{Proxy: service.ProxyConfig{
 					Kube: service.KubeProxyConfig{
 						Enabled: false,
@@ -159,7 +166,7 @@ func TestAuthSignKubeconfig(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			// Generate kubeconfig.
 			if err = tt.ac.generateUserKeys(client); err != nil && tt.wantError == "" {
-				t.Fatalf("generating KubeProxyConfigfig: %v", err)
+				t.Fatalf("generating KubeProxyConfig: %v", err)
 			}
 
 			if tt.wantError != "" && (err == nil || err.Error() != tt.wantError) {
@@ -196,6 +203,7 @@ type mockClient struct {
 
 	clusterName    services.ClusterName
 	userCerts      *proto.Certs
+	dbCerts        *proto.DatabaseCertResponse
 	cas            []services.CertAuthority
 	proxies        []services.Server
 	remoteClusters []services.RemoteCluster
@@ -219,6 +227,9 @@ func (c mockClient) GetRemoteClusters(opts ...services.MarshalOption) ([]service
 }
 func (c mockClient) GetKubeServices(context.Context) ([]services.Server, error) {
 	return c.kubeServices, nil
+}
+func (c mockClient) GenerateDatabaseCert(context.Context, *proto.DatabaseCertRequest) (*proto.DatabaseCertResponse, error) {
+	return c.dbCerts, nil
 }
 
 func TestCheckKubeCluster(t *testing.T) {
@@ -315,4 +326,36 @@ func TestCheckKubeCluster(t *testing.T) {
 			require.Equal(t, tt.want, a.kubeCluster)
 		})
 	}
+}
+
+func TestGenerateDatabaseKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	client := mockClient{
+		dbCerts: &proto.DatabaseCertResponse{
+			Cert: []byte("TLS cert"),
+			CACerts: [][]byte{
+				[]byte("CA cert"),
+			},
+		},
+	}
+
+	ac := AuthCommand{
+		output:        filepath.Join(tmpDir, "db"),
+		outputFormat:  identityfile.FormatDatabase,
+		signOverwrite: true,
+		genHost:       "example.com",
+		genTTL:        time.Hour,
+	}
+
+	err := ac.GenerateAndSignKeys(client)
+	require.NoError(t, err)
+
+	certBytes, err := ioutil.ReadFile(ac.output + ".crt")
+	require.NoError(t, err)
+	require.Equal(t, client.dbCerts.Cert, certBytes, "certificates match")
+
+	caBytes, err := ioutil.ReadFile(ac.output + ".cas")
+	require.NoError(t, err)
+	require.Equal(t, client.dbCerts.CACerts[0], caBytes, "CA certificates match")
 }

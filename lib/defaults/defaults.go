@@ -27,7 +27,9 @@ import (
 	"github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/lib/limiter"
 	"github.com/gravitational/teleport/lib/utils"
+
 	"github.com/gravitational/trace"
+	"gopkg.in/square/go-jose.v2"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -57,6 +59,9 @@ const (
 	// When running as a "SSH Proxy" this port will be used to
 	// serve auth requests.
 	AuthListenPort = 3025
+
+	// MySQLListenPort is the default listen port for MySQL proxy.
+	MySQLListenPort = 3036
 
 	// Default DB to use for persisting state. Another options is "etcd"
 	BackendType = "bolt"
@@ -375,6 +380,9 @@ var (
 	// AppsQueueSize is apps service queue size.
 	AppsQueueSize = 128
 
+	// DatabasesQueueSize is db service queue size.
+	DatabasesQueueSize = 128
+
 	// CASignatureAlgorithm is the default signing algorithm to use when
 	// creating new SSH CAs.
 	CASignatureAlgorithm = ssh.SigAlgoRSASHA2512
@@ -417,13 +425,12 @@ const (
 )
 
 const (
-	// MinCertDuration specifies minimum duration of validity of issued cert
+	// MinCertDuration specifies minimum duration of validity of issued certificate
 	MinCertDuration = time.Minute
-	// MaxCertDuration limits maximum duration of validity of issued cert
+	// MaxCertDuration limits maximum duration of validity of issued certificate
 	MaxCertDuration = defaults.MaxCertDuration
-	// CertDuration is a default certificate duration
-	// 12 is default as it' longer than average working day (I hope so)
-	CertDuration = 12 * time.Hour
+	// CertDuration is a default certificate duration.
+	CertDuration = defaults.CertDuration
 	// RotationGracePeriod is a default rotation period for graceful
 	// certificate rotations, by default to set to maximum allowed user
 	// cert duration
@@ -446,7 +453,22 @@ const (
 	RoleAuthService = "auth"
 	// RoleApp is an application proxy.
 	RoleApp = "app"
+	// RoleDatabase is a database proxy role.
+	RoleDatabase = "db"
 )
+
+const (
+	// ProtocolPostgres is the PostgreSQL database protocol.
+	ProtocolPostgres = "postgres"
+	// ProtocolMySQL is the MySQL database protocol.
+	ProtocolMySQL = "mysql"
+)
+
+// DatabaseProtocols is a list of all supported database protocols.
+var DatabaseProtocols = []string{
+	ProtocolPostgres,
+	ProtocolMySQL,
+}
 
 const (
 	// PerfBufferPageCount is the size of the perf ring buffer in number of pages.
@@ -485,6 +507,10 @@ var (
 
 	// ConfigEnvar is a name of teleport's configuration environment variable
 	ConfigEnvar = "TELEPORT_CONFIG"
+
+	// ConfigFileEnvar is the name of the environment variable used to specify a path to
+	// the Teleport configuration file that tctl reads on use
+	ConfigFileEnvar = "TELEPORT_CONFIG_FILE"
 
 	// LicenseFile is the default name of the license file
 	LicenseFile = "license.pem"
@@ -612,7 +638,7 @@ const (
 	ApplicationTokenKeyType = "RSA"
 	// ApplicationTokenAlgorithm is the default algorithm used to sign
 	// application access tokens.
-	ApplicationTokenAlgorithm = defaults.ApplicationTokenAlgorithm
+	ApplicationTokenAlgorithm = jose.RS256
 )
 
 // WindowsOpenSSHNamedPipe is the address of the named pipe that the
