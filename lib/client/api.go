@@ -771,6 +771,9 @@ type TeleportClient struct {
 
 	// Store the proxy client after a connection, so it can be closed when we are done with it.
 	proxyClient *ProxyClient
+
+	// Indicate that the port forwarding is ready to go
+	Ready chan bool
 }
 
 // ShellCreatedCallback can be supplied for every teleport client. It will
@@ -1099,6 +1102,11 @@ func (tc *TeleportClient) SSH(ctx context.Context, command []string, runLocally 
 
 	// If forwarding ports were specified, start port forwarding.
 	tc.startPortForwarding(ctx, nodeClient)
+
+	// Indicate to interested outside parties that we are ready to accept port forwarding requests.
+	if tc.Ready != nil {
+		tc.Ready<-true
+	}
 
 	// If no remote command execution was requested, block on the context which
 	// will unblock upon error or SIGINT.
